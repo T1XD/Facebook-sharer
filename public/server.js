@@ -1,47 +1,46 @@
-const express = require('express');
-const axios = require('axios');
-const path = require('path');
-const app = express();
-
-app.use(express.static('public'));
-app.use(express.json());
-
 app.post('/share', async (req, res) => {
   const { accessToken, shareUrl, shareCount } = req.body;
-  const timeInterval = 500;
+  const timeInterval = 1000;
   let sharedCount = 0;
+  let errorOccurred = false;
+
+  const results = [];
 
   const interval = setInterval(async () => {
+    if (sharedCount >= shareCount || errorOccurred) {
+      clearInterval(interval);
+
+      // Send response only once
+      return res.json({
+        message: `Finished: ${sharedCount} out of ${shareCount} shares`,
+        results,
+      });
+    }
+
     try {
       const response = await axios.post(
-        `https://graph.facebook.com/v20.0/me/feed?access_token=${accessToken}&fields=id&published=0`,
+        `https://graph.facebook.com/v20.0/me/feed?access_token=${accessToken}`,
         {
           link: shareUrl,
           privacy: { value: 'SELF' },
           no_story: true,
+          published: false
         },
         {
           headers: {
-            'user-agent':
+            'User-Agent':
               'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
           }
         }
       );
 
       sharedCount++;
+      results.push({ success: true, id: response.data.id });
       console.log(`Shared #${sharedCount}: ${response.data.id}`);
-
-      if (sharedCount >= shareCount) {
-        clearInterval(interval);
-        res.json({ message: `Shared ${sharedCount} times.` });
-      }
     } catch (error) {
-      console.error(error?.response?.data || error.message);
-      clearInterval(interval);
-      res.status(500).json({ error: 'Error sharing post' });
+      errorOccurred = true;
+      results.push({ success: false, error: error?.response?.data || error.message });
+      console.error('Error sharing:', error?.response?.data || error.message);
     }
   }, timeInterval);
 });
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
